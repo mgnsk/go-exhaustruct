@@ -17,14 +17,43 @@ import (
 )
 
 type analyzer struct {
-	include pattern.List `exhaustruct:"optional"`
-	exclude pattern.List `exhaustruct:"optional"`
+	include      pattern.List `exhaustruct:"optional"`
+	exclude      pattern.List `exhaustruct:"optional"`
+	onlyExported bool         `exhaustruct:"optional"`
 
 	fieldsCache   map[types.Type]fields.StructFields
 	fieldsCacheMu sync.RWMutex `exhaustruct:"optional"`
 
 	typeProcessingNeed   map[string]bool
 	typeProcessingNeedMu sync.RWMutex `exhaustruct:"optional"`
+}
+
+func NewOnlyExportedAnalyzer(include, exclude []string) (*analysis.Analyzer, error) {
+	a := analyzer{
+		onlyExported:       true,
+		fieldsCache:        make(map[types.Type]fields.StructFields),
+		typeProcessingNeed: make(map[string]bool),
+	}
+
+	var err error
+
+	a.include, err = pattern.NewList(include...)
+	if err != nil {
+		return nil, err //nolint:wrapcheck
+	}
+
+	a.exclude, err = pattern.NewList(exclude...)
+	if err != nil {
+		return nil, err //nolint:wrapcheck
+	}
+
+	return &analysis.Analyzer{ //nolint:exhaustruct
+		Name:     "exhaustruct",
+		Doc:      "Checks if all structure fields are initialized",
+		Run:      a.run,
+		Requires: []*analysis.Analyzer{inspect.Analyzer},
+		Flags:    a.newFlagSet(),
+	}, nil
 }
 
 func NewAnalyzer(include, exclude []string) (*analysis.Analyzer, error) {
@@ -59,14 +88,16 @@ func (a *analyzer) newFlagSet() flag.FlagSet {
 
 	fs.Var(&a.include, "i", `Regular expression to match type names, can receive multiple flags.
 Anonymous structs can be matched by '<anonymous>' alias.
-4ex: 
+4ex:
 	github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer\.<anonymous>
 	github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer\.TypeInfo`)
 	fs.Var(&a.exclude, "e", `Regular expression to exclude type names, can receive multiple flags.
 Anonymous structs can be matched by '<anonymous>' alias.
-4ex: 
+4ex:
 	github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer\.<anonymous>
 	github.com/GaijinEntertainment/go-exhaustruct/v3/analyzer\.TypeInfo`)
+
+	fs.BoolVar(&a.onlyExported, "exported", a.onlyExported, `Check only exported fields.`)
 
 	return *fs
 }
@@ -187,8 +218,9 @@ func (a *analyzer) processStruct(
 	// unnamed structures are only defined in same package, along with types that has
 	// prefix identical to current package name.
 	isSamePackage := info.PackagePath == pass.Pkg.Path()
+	onlyExported := !isSamePackage || a.onlyExported
 
-	if f := a.litSkippedFields(lit, structTyp, !isSamePackage); len(f) > 0 {
+	if f := a.litSkippedFields(lit, structTyp, onlyExported); len(f) > 0 {
 		pos := lit.Pos()
 
 		if len(f) == 1 {
