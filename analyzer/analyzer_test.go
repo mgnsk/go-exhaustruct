@@ -39,4 +39,12 @@ func TestAnalyzer(t *testing.T) {
 	require.NoError(t, err)
 
 	analysistest.Run(t, testdataPath, a, "i", "e")
+
+	a, err = analyzer.NewOnlyExportedAnalyzer(
+		[]string{`.*[T]est.*`},
+		nil,
+	)
+	require.NoError(t, err)
+
+	analysistest.Run(t, testdataPath, a, "exported")
 }
