@@ -40,11 +40,19 @@ func TestAnalyzer(t *testing.T) {
 
 	analysistest.Run(t, testdataPath, a, "i", "e")
 
-	a, err = analyzer.NewOnlyExportedAnalyzer(
-		[]string{`.*[T]est.*`},
-		nil,
+	a, err = analyzer.NewWithOptions(
+		analyzer.Include(`.*[T]est.*`),
+		analyzer.OnlyExported,
 	)
 	require.NoError(t, err)
 
 	analysistest.Run(t, testdataPath, a, "exported")
+
+	a, err = analyzer.NewWithOptions(
+		analyzer.Include(`.*[T]est.*`),
+		analyzer.SkipEmpty,
+	)
+	require.NoError(t, err)
+
+	analysistest.Run(t, testdataPath, a, "skipempty")
 }
